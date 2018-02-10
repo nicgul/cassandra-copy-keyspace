@@ -36,7 +36,16 @@ public class CopyCassandraKeyspace {
             sourcePort = sourceHostParts[1];
         }
         
-        String source = argSet.stream().filter(arg -> arg.startsWith("source=")).findAny().orElse(null);
+        String sourceCredsArg = argSet.stream().filter(arg -> arg.startsWith("sourceCreds=")).findAny().orElse("");
+        sourceCredsArg = sourceCredsArg.replace("sourceCreds=", "");
+        String[] sourceCredsParts = sourceCredsArg.split("::");
+        String sourceUser = sourceCredsParts[0];
+        String sourcePass = "";
+        if(sourceCredsParts.length > 1) {
+            sourcePass = sourceCredsParts[1];
+        }
+        
+        String source = argSet.stream().filter(arg -> arg.startsWith("source=")).findAny().orElse("test");
         if(source == null || source.isEmpty()) {
             System.out.println("The 'source' argument must be specified. [source=<keyspace>]");
         } else {
@@ -47,14 +56,23 @@ public class CopyCassandraKeyspace {
         targetHostArg = targetHostArg.replace("targetHost=", "");
         String[] targetHostParts = targetHostArg.split(":");
         String targetHost = targetHostParts[0];
-        String targetPort = "9042";
+        String targetPort = "";
         if(targetHostParts.length > 1) {
             targetPort = targetHostParts[1];
         }
         
+        String targetCredsArg = argSet.stream().filter(arg -> arg.startsWith("targetCreds=")).findAny().orElse("");
+        targetCredsArg = targetCredsArg.replace("targetCreds=", "");
+        String[] targetCredsParts = targetCredsArg.split("::");
+        String targetUser = targetCredsParts[0];
+        String targetPass = "";
+        if(targetCredsParts.length > 1) {
+            targetPass = targetCredsParts[1];
+        }
+        
         boolean run = false;
         
-        String target = argSet.stream().filter(arg -> arg.startsWith("target=")).findAny().orElse(null);
+        String target = argSet.stream().filter(arg -> arg.startsWith("target=")).findAny().orElse("bak_test");
         if(target == null || target.isEmpty()) {
             System.out.println("The 'target' argument must be specified. [target=<keyspace>]");
         } else {
@@ -63,8 +81,18 @@ public class CopyCassandraKeyspace {
         }
         
         if(run) {
-            CopyCassandraKeyspace cck = new CopyCassandraKeyspace(sourceHost, sourcePort,
-                        source, targetHost, targetPort, target);
+            CopyCassandraKeyspace cck = new CopyCassandraKeyspace(
+                    sourceHost,
+                    sourcePort,
+                    source,
+                    sourceUser,
+                    sourcePass,
+                    targetHost,
+                    targetPort,
+                    target,
+                    targetUser,
+                    targetPass
+            );
             try {
                 cck.connect();
                 cck.copy();
@@ -79,10 +107,14 @@ public class CopyCassandraKeyspace {
     private final String sourceHost;
     private final int sourcePort;
     private final String source;
+    private final String sourceUser;
+    private final String sourcePass;
     
     private final String targetHost;
     private final int targetPort;
     private final String target;
+    private final String targetUser;
+    private final String targetPass;
     
     private Cluster sourceCluster;
     private Session sourceSession;
@@ -91,22 +123,28 @@ public class CopyCassandraKeyspace {
     
     private Map<String, PreparedStatement> copyPreps = new HashMap();
     
-    public CopyCassandraKeyspace(String sourceHost, String sourcePort, String source,
-            String targetHost, String targetPort, String target) {
-        this.sourceHost = sourceHost == null ? "localhost" : sourceHost;
-        this.sourcePort = sourcePort == null ? 9042 : Integer.valueOf(sourcePort);
+    public CopyCassandraKeyspace(String sourceHost, String sourcePort, String source, String sourceUser, String sourcePass,
+            String targetHost, String targetPort, String target, String targetUser, String targetPass) {
         
-        if(source == null || source.isEmpty()) {
+        if(source == null || source.trim().isEmpty()) {
             throw new IllegalArgumentException("The 'source' argument can't be empty.");
         }
         this.source = source;
-        this.targetHost = targetHost == null ? "localhost" : targetHost;
-        this.targetPort = targetPort == null ? 9042 : Integer.valueOf(targetPort);
-        
-        if(target == null || target.isEmpty()) {
+        if(target == null || target .trim().isEmpty()) {
             throw new IllegalArgumentException("The 'target' argument can't be empty.");
         }
         this.target = target;
+        
+        this.sourceHost = sourceHost == null || sourceHost.trim().isEmpty() ? "localhost" : sourceHost.trim();
+        this.sourcePort = sourcePort == null || sourcePort.trim().isEmpty() ? 9042 : Integer.valueOf(sourcePort.trim());
+        this.sourceUser = sourceUser == null || sourceUser.trim().isEmpty() ? null : sourceUser.trim();
+        this.sourcePass = sourcePass == null || sourcePass.trim().isEmpty() ? null : sourcePass.trim();
+        
+        this.targetHost = targetHost == null || targetHost.trim().isEmpty() ? "localhost" : targetHost.trim();
+        this.targetPort = targetPort == null || targetPort.trim().isEmpty() ? 9042 : Integer.valueOf(targetPort.trim());
+        this.targetUser = targetUser == null || targetUser.trim().isEmpty() ? null : targetUser.trim();
+        this.targetPass = targetPass == null || targetPass.trim().isEmpty() ? null : targetPass.trim();
+        
     }
     
     public void connect() {
@@ -115,13 +153,19 @@ public class CopyCassandraKeyspace {
     }
     
     private void connectSource() {
-        sourceCluster = Cluster.builder().addContactPoint(sourceHost).withPort(sourcePort).build();
+        
+        sourceCluster = Cluster.builder()
+                .addContactPoint(sourceHost).withPort(sourcePort)
+                .withCredentials(sourceUser, sourcePass)
+                .build();
         sourceSession = sourceCluster.connect(source);
         System.out.println("Connected to source cluster: '" + sourceHost + "'");
     }
     
     private void connectTarget() {
-        targetCluster = Cluster.builder().addContactPoint(targetHost).withPort(targetPort).build();
+        targetCluster = Cluster.builder().addContactPoint(targetHost).withPort(targetPort)
+                .withCredentials(targetUser, targetPass)
+                .build();
         targetSession = targetCluster.connect();
         System.out.println("Connected to target cluster: '" + targetHost + "'");
     }
