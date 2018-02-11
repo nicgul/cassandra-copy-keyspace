@@ -2,10 +2,13 @@ package io.oopsie.nicgu.cassandra.tools;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.CodecRegistry;
+import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
+import com.datastax.driver.core.TupleType;
+import com.datastax.driver.core.TupleValue;
 import com.datastax.driver.core.UDTValue;
 import com.datastax.driver.core.UserType;
 import com.google.common.collect.Lists;
@@ -21,8 +24,21 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
+/**
+ * CopyCassandraKeyspace is a convenient tool capabale of recreate the structure
+ * and copy the data from one keyspace (source) residing on the passed in
+ * sourceHost (default is localhost) into another keyspace (target). The target keyspace will be created
+ * in the cluster residing on passed in targetHost (default is localhost).
+ */
 public class CopyCassandraKeyspace {
  
+    /**
+     * <p>
+     * Mandatory parameters: source=source-keyspace target=target-keyspace
+     * <p>
+     * Optional parameters: [sourceHost=host[:port]] [targetHost=host[:port]] [sourceCreds=username::password] [targetCreds=username::password]
+     * @param args the mandatoru and optional params mentioned in metod javadocs.
+     */
     public static void main(String[] args) {
     
         Set<String> argSet = new HashSet(Arrays.asList(args));
@@ -97,6 +113,7 @@ public class CopyCassandraKeyspace {
                 cck.connect();
                 cck.copy();
             } catch(Exception e) {
+                e.printStackTrace();
                 System.out.println(e.getMessage());
             } finally {
                 cck.close();
@@ -123,6 +140,20 @@ public class CopyCassandraKeyspace {
     
     private Map<String, PreparedStatement> copyPreps = new HashMap();
     
+    /**
+     * Create a new CopyCassandraKeyspace instance capable of copying data from source to target.
+     * 
+     * @param sourceHost the host where the source keyspace resides
+     * @param sourcePort the port of the host where the source keyspace resides
+     * @param source the name of the source keyspace
+     * @param sourceUser the username of the source keyspace cluster
+     * @param sourcePass the password of the source keyspace cluster
+     * @param targetHost the host where the target keyspace resides
+     * @param targetPort the port of the host where the target keyspace resides
+     * @param target the name of the target keyspace
+     * @param targetUser the username of the target keyspace cluster
+     * @param targetPass the password of the target keyspace cluster
+     */
     public CopyCassandraKeyspace(String sourceHost, String sourcePort, String source, String sourceUser, String sourcePass,
             String targetHost, String targetPort, String target, String targetUser, String targetPass) {
         
@@ -147,11 +178,20 @@ public class CopyCassandraKeyspace {
         
     }
     
+    /**
+     * Connects the source and the target Cassandra cluster and session objects.
+     * Call this method before calling {@link #copy()}.
+     * 
+     * @see #copy() 
+     */
     public void connect() {
         connectSource();
         connectTarget();
     }
     
+    /**
+     * Connects the source cluster and session objects.
+     */
     private void connectSource() {
         
         sourceCluster = Cluster.builder()
@@ -162,6 +202,9 @@ public class CopyCassandraKeyspace {
         System.out.println("Connected to source cluster: '" + sourceHost + "'");
     }
     
+    /**
+     * Connects the target cluster and session objects.
+     */
     private void connectTarget() {
         targetCluster = Cluster.builder().addContactPoint(targetHost).withPort(targetPort)
                 .withCredentials(targetUser, targetPass)
@@ -170,11 +213,17 @@ public class CopyCassandraKeyspace {
         System.out.println("Connected to target cluster: '" + targetHost + "'");
     }
     
+    /**
+     * Closes the source and the target Cassandra cluster and session objects.
+     */
     public void close() {
         closeSource();
         closeTarget();
     }
     
+    /**
+     * Close the source cluster and session objects.
+     */
     private void closeSource() {
         if(sourceSession != null) {
             sourceSession.close();
@@ -186,6 +235,9 @@ public class CopyCassandraKeyspace {
         }
     }
     
+    /**
+     * Close the target cluster and session objects.
+     */
     private void closeTarget() {
         if(targetSession != null) {
             targetSession.close();
@@ -197,10 +249,20 @@ public class CopyCassandraKeyspace {
         }
     }
     
+    /**
+     * Starts the copying process. Prior to calling this method
+     * {@link #connect()} must be called.
+     * 
+     * @see #connect() 
+     */
     public void copy() {
         copyKeyspace();
     }
     
+    /**
+     * Fetches the all CQLs needed to recreate the source keyspace structure and exeecutes
+     * these to create the target keyspace.
+     */
     private void copyKeyspace() {
 
         List<String> exportedCqls = Arrays.asList(
@@ -224,24 +286,27 @@ public class CopyCassandraKeyspace {
         copyTables();
     }
     
-    
+    /**
+     * Convenient method that loops through all table in source keyspace to be copied.
+     */
     private void copyTables() {
-        
-        String udtNameCql = "SELECT type_name FROM system_schema.types WHERE keyspace_name='" + source + "'";
-        Set<String> udts = sourceSession.execute(udtNameCql).all().stream()
-                .map(row -> row.getString("type_name")).collect(Collectors.toSet());
         
         String tableNameCql = "SELECT table_name FROM system_schema.tables WHERE keyspace_name='" + source + "'";
         Set<String> tables = sourceSession.execute(tableNameCql).all().stream()
                 .map(row -> row.getString("table_name")).collect(Collectors.toSet());
         
         tables.forEach(table -> {
-            copyTableData(table, udts);
-            System.out.println("Copied data from table: '" + table + "'");
+            copyTableData(table);
         });
     }
     
-    private void copyTableData(String table, Set<String> udts) {
+    /**
+     * Selects data from passed in table in the source keyspace and isnerts hte data
+     * into a table with same name in the target keyspace.
+     * 
+     * @param table the name of the table to copy data from
+     */
+    private void copyTableData(String table) {
         
         String colCql = "SELECT * FROM system_schema.columns WHERE keyspace_name='" + source + "' AND table_name='" + table + "'";
         ResultSet colRs = sourceSession.execute(colCql);
@@ -290,6 +355,7 @@ public class CopyCassandraKeyspace {
                 throw new RuntimeException(e);
             }
         }
+        System.out.println("Copied data from table: '" + table + "'");
     }
     
     /**
@@ -306,47 +372,178 @@ public class CopyCassandraKeyspace {
         if(sourceVal == null) {
             return null;
         }
-        Object newVal = null;
+        
+        CodecRegistry sourceCodecs = sourceCluster.getConfiguration().getCodecRegistry();
+        CodecRegistry targetCodecs = targetCluster.getConfiguration().getCodecRegistry();
+        Object targetVal;
         if(sourceVal instanceof UDTValue) {
-            UDTValue udtVal = ((UDTValue)sourceVal);
-            UDTValue newUDT = getNewTargetUDTValue(udtVal.getType().getTypeName());
-            CodecRegistry codecs = sourceCluster.getConfiguration().getCodecRegistry();
-            UserType type = udtVal.getType();
-            for(String fn : type.getFieldNames()) {
-                Object obj = udtVal.get(fn, codecs.codecFor(type.getFieldType(fn)));
-                newUDT.set(fn, obj, codecs.codecFor(type.getFieldType(fn)));
-            }
-            newVal = newUDT;
+            UDTValue sourceUDTVal = ((UDTValue)sourceVal);
+            UDTValue targetUDTVal = getNewTargetUDTValue(sourceUDTVal.getType().getTypeName());
+            UserType type = sourceUDTVal.getType();
+            type.getFieldNames().forEach((fn) -> {
+                Object val = sourceUDTVal.get(fn, sourceCodecs.codecFor(type.getFieldType(fn)));
+                targetUDTVal.set(fn, val, targetCodecs.codecFor(type.getFieldType(fn)));
+            });
+            targetVal = targetUDTVal;
+        }  else if(sourceVal instanceof TupleValue) {
+            TupleValue sourceTuple = (TupleValue)sourceVal;
+            TupleValue targetTuple = getNewTargetTupleValue(sourceTuple);
+            List<DataType> compTypes = targetTuple.getType().getComponentTypes();
+            AtomicInteger counter = new AtomicInteger(0);
+            compTypes.forEach(ct -> {
+                Object val = convertUDTValueIfNecessary(sourceTuple.get(counter.get(), targetCodecs.codecFor(ct)));
+                targetTuple.set(counter.getAndIncrement(), val, targetCodecs.codecFor(ct));
+            });
+            targetVal = targetTuple;
         } else if(sourceVal instanceof List) {
             List list = Lists.newArrayList();
             ((List)sourceVal).forEach(v -> {
                 list.add(convertUDTValueIfNecessary(v));
             });
-            newVal = list;
+            targetVal = list;
         } else if(sourceVal instanceof Set) {
             Set set = Sets.newHashSet();
             ((Set)sourceVal).forEach(v -> {
                 set.add(convertUDTValueIfNecessary(v));
             });
-            newVal = set;
+            targetVal = set;
         } else if(sourceVal instanceof Map) {
             Map map = Maps.newHashMap();
             ((Map)sourceVal).forEach((k,v) -> {
                 map.put(k, convertUDTValueIfNecessary(v));
             });
-            newVal = map;
+            targetVal = map;
         } else {
-            newVal = sourceVal;
+            targetVal = sourceVal;
         }
-        return newVal;
+        return targetVal;
     }
     
+    /**
+     * Returns a new target UDTValue with a codec fitting the target keyspace.
+     * 
+     * @param udtName the name of the UDT.
+     * @return a new target keyspace UDTValue.
+     */
     private UDTValue getNewTargetUDTValue(String udtName) {
-        
         UserType userType = targetCluster.getMetadata().getKeyspace(target).getUserTypes()
                 .stream().filter(t -> t.getTypeName().equals(udtName)).findAny().get();
-        
         return userType.newValue();
     }
-
+    
+    /**
+     * Takes a TupleVale from the source keyspace and creates a TupleValue
+     * with a codec fitting the target keyspace.
+     * 
+     * @param sourceVal the source tuplevale
+     * @return a new TupleValue with codec fitting the target keyspace.
+     */
+    private TupleValue getNewTargetTupleValue(TupleValue sourceVal) {
+        
+        List<DataType> types = new ArrayList();
+        for (DataType ct : sourceVal.getType().getComponentTypes()) {
+            switch(ct.getName()) {
+                case ASCII:
+                    types.add(DataType.ascii());
+                    break;
+                case BIGINT:
+                    types.add(DataType.bigint());
+                    break;
+                case BLOB:
+                    types.add(DataType.blob());
+                    break;
+                case BOOLEAN:
+                    types.add(DataType.cboolean());
+                    break;
+                case COUNTER:
+                    types.add(DataType.counter());
+                    break;
+                case CUSTOM:
+                    String customTypeName = ((DataType.CustomType)ct).getCustomTypeClassName();
+                    types.add(DataType.custom(customTypeName));
+                    break;
+                case DATE:
+                    types.add(DataType.date());
+                    break;
+                case DECIMAL:
+                    types.add(DataType.decimal());
+                    break;
+                case DOUBLE:
+                    types.add(DataType.cdouble());
+                    break;
+                case DURATION:
+                    types.add(DataType.duration());
+                    break;
+                case FLOAT:
+                    types.add(DataType.cfloat());
+                    break;
+                case INET:
+                    types.add(DataType.inet());
+                    break;
+                case INT:
+                    types.add(DataType.cint());
+                    break;
+                case LIST:
+                    if(ct.isFrozen()) {
+                        types.add(DataType.frozenList(ct.getTypeArguments().get(0)));
+                    } else {
+                        types.add(DataType.list(ct.getTypeArguments().get(0)));
+                    }
+                    break;
+                case MAP:
+                    if(ct.isFrozen()) {
+                        types.add(DataType.frozenMap(ct.getTypeArguments().get(0), ct.getTypeArguments().get(1)));
+                    } else {
+                        types.add(DataType.map(ct.getTypeArguments().get(0), ct.getTypeArguments().get(1)));
+                    }
+                    break;
+                case SET:
+                    if(ct.isFrozen()) {
+                        types.add(DataType.frozenSet(ct.getTypeArguments().get(0)));
+                    } else {
+                        types.add(DataType.set(ct.getTypeArguments().get(0)));
+                    }
+                    break;
+                case SMALLINT:
+                    types.add(DataType.smallint());
+                    break;
+                case TEXT:
+                    types.add(DataType.text());
+                    break;
+                case TIME:
+                    types.add(DataType.time());
+                    break;
+                case TIMESTAMP:
+                    types.add(DataType.timestamp());
+                    break;
+                case TIMEUUID:
+                    types.add(DataType.timeuuid());
+                    break;
+                case TINYINT:
+                    types.add(DataType.tinyint());
+                    break;
+                case TUPLE:
+                     TupleType tupleType = targetCluster.getMetadata().newTupleType( ((TupleType)ct).getComponentTypes());
+                    types.add(tupleType);
+                    break;
+                case UDT:
+                    String typeName = ((UserType)ct).getTypeName();
+                    UserType userType = targetCluster.getMetadata().getKeyspace(target).getUserType(typeName);
+                    types.add(userType);
+                    break;
+                case UUID:
+                    types.add(DataType.uuid());
+                    break;
+                case VARCHAR:
+                    types.add(DataType.varchar());
+                    break;
+                case VARINT:
+                    types.add(DataType.varint());
+                    break;
+                default:
+                    break; 
+            }
+        }
+        return targetCluster.getMetadata().newTupleType(types).newValue();
+    }
 }
