@@ -45,7 +45,7 @@ public class CopyCassandraKeyspace {
             sourcePass = sourceCredsParts[1];
         }
         
-        String source = argSet.stream().filter(arg -> arg.startsWith("source=")).findAny().orElse("test");
+        String source = argSet.stream().filter(arg -> arg.startsWith("source=")).findAny().orElse(null);
         if(source == null || source.isEmpty()) {
             System.out.println("The 'source' argument must be specified. [source=<keyspace>]");
         } else {
@@ -61,7 +61,7 @@ public class CopyCassandraKeyspace {
             targetPort = targetHostParts[1];
         }
         
-        String targetCredsArg = argSet.stream().filter(arg -> arg.startsWith("targetCreds=")).findAny().orElse("");
+        String targetCredsArg = argSet.stream().filter(arg -> arg.startsWith("targetCreds=")).findAny().orElse(null);
         targetCredsArg = targetCredsArg.replace("targetCreds=", "");
         String[] targetCredsParts = targetCredsArg.split("::");
         String targetUser = targetCredsParts[0];
@@ -72,7 +72,7 @@ public class CopyCassandraKeyspace {
         
         boolean run = false;
         
-        String target = argSet.stream().filter(arg -> arg.startsWith("target=")).findAny().orElse("bak_test");
+        String target = argSet.stream().filter(arg -> arg.startsWith("target=")).findAny().orElse("");
         if(target == null || target.isEmpty()) {
             System.out.println("The 'target' argument must be specified. [target=<keyspace>]");
         } else {
