@@ -15,7 +15,7 @@ mandatory parameters:
 source=source-keyspace
 target=target-keyspace
 
-optional parameters
+optional parameters:
 [sourceHost=host[:port]] [targetHost=host[:port]] [sourceCreds=username::password] [targetCreds=username::password]
 ```
 
