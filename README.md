@@ -1,5 +1,5 @@
 # cassandra-copy-keyspace
-Copies a Cassandra keyspace to a new named keyspace. Improvements and bug reporting is more than welcome!
+Copies a Cassandra keyspace to a new named keyspace. Improvements and bug reporting are more than welcome!
 
 # Build:
 ```
