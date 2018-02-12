@@ -442,108 +442,140 @@ public class CopyCassandraKeyspace {
         
         List<DataType> types = new ArrayList();
         for (DataType ct : sourceVal.getType().getComponentTypes()) {
-            switch(ct.getName()) {
+            types.add(getTargetType(ct));
+        }
+        return targetCluster.getMetadata().newTupleType(types).newValue();
+    }
+    
+    /**
+     * Converts a list of source DataTypes to a list of types with a codec fitting the target keyspace.
+     * 
+     * @param sourceType the source keyspace DataTypes
+     * @return DataTypes with target codec.
+     */
+    private List<DataType> getTragetTypes(List<DataType> sourceTypes) {
+        
+        List<DataType> targetTypes = new ArrayList();
+        for (DataType st : sourceTypes) {
+            targetTypes.add(getTargetType(st));
+        }
+        return targetTypes;
+    }
+    
+    /**
+     * Converts a source DataType to a type with a codec fitting the target keyspace.
+     * 
+     * @param sourceType the source keyspace DataType
+     * @return a DataType with target codec.
+     */
+    private DataType getTargetType(DataType sourceType) {
+        
+        DataType targetType;
+        
+        switch(sourceType.getName()) {
                 case ASCII:
-                    types.add(DataType.ascii());
+                    targetType = DataType.ascii();
                     break;
                 case BIGINT:
-                    types.add(DataType.bigint());
+                    targetType = DataType.bigint();
                     break;
                 case BLOB:
-                    types.add(DataType.blob());
+                    targetType = DataType.blob();
                     break;
                 case BOOLEAN:
-                    types.add(DataType.cboolean());
+                    targetType = DataType.cboolean();
                     break;
                 case COUNTER:
-                    types.add(DataType.counter());
+                    targetType = DataType.counter();
                     break;
                 case CUSTOM:
-                    String customTypeName = ((DataType.CustomType)ct).getCustomTypeClassName();
-                    types.add(DataType.custom(customTypeName));
+                    String customTypeName = ((DataType.CustomType)sourceType).getCustomTypeClassName();
+                    targetType = DataType.custom(customTypeName);
                     break;
                 case DATE:
-                    types.add(DataType.date());
+                    targetType = DataType.date();
                     break;
                 case DECIMAL:
-                    types.add(DataType.decimal());
+                    targetType = DataType.decimal();
                     break;
                 case DOUBLE:
-                    types.add(DataType.cdouble());
+                    targetType = DataType.cdouble();
                     break;
                 case DURATION:
-                    types.add(DataType.duration());
+                    targetType = DataType.duration();
                     break;
                 case FLOAT:
-                    types.add(DataType.cfloat());
+                    targetType = DataType.cfloat();
                     break;
                 case INET:
-                    types.add(DataType.inet());
+                    targetType = DataType.inet();
                     break;
                 case INT:
-                    types.add(DataType.cint());
+                    targetType = DataType.cint();
                     break;
                 case LIST:
-                    if(ct.isFrozen()) {
-                        types.add(DataType.frozenList(ct.getTypeArguments().get(0)));
+                    if(sourceType.isFrozen()) {
+                        targetType = DataType.frozenList(getTargetType(sourceType.getTypeArguments().get(0)));
                     } else {
-                        types.add(DataType.list(ct.getTypeArguments().get(0)));
+                        targetType = DataType.list(getTargetType(sourceType.getTypeArguments().get(0)));
                     }
                     break;
                 case MAP:
-                    if(ct.isFrozen()) {
-                        types.add(DataType.frozenMap(ct.getTypeArguments().get(0), ct.getTypeArguments().get(1)));
+                    if(sourceType.isFrozen()) {
+                        targetType = DataType.frozenMap(getTargetType(sourceType.getTypeArguments().get(0)),
+                                getTargetType(sourceType.getTypeArguments().get(1)));
                     } else {
-                        types.add(DataType.map(ct.getTypeArguments().get(0), ct.getTypeArguments().get(1)));
+                        targetType = DataType.map(getTargetType(sourceType.getTypeArguments().get(0)),
+                                getTargetType(sourceType.getTypeArguments().get(1)));
                     }
                     break;
                 case SET:
-                    if(ct.isFrozen()) {
-                        types.add(DataType.frozenSet(ct.getTypeArguments().get(0)));
+                    if(sourceType.isFrozen()) {
+                        targetType = DataType.frozenSet(getTargetType(sourceType.getTypeArguments().get(0)));
                     } else {
-                        types.add(DataType.set(ct.getTypeArguments().get(0)));
+                        targetType = DataType.set(getTargetType(sourceType.getTypeArguments().get(0)));
                     }
                     break;
                 case SMALLINT:
-                    types.add(DataType.smallint());
+                    targetType = DataType.smallint();
                     break;
                 case TEXT:
-                    types.add(DataType.text());
+                    targetType = DataType.text();
                     break;
                 case TIME:
-                    types.add(DataType.time());
+                    targetType = DataType.time();
                     break;
                 case TIMESTAMP:
-                    types.add(DataType.timestamp());
+                    targetType = DataType.timestamp();
                     break;
                 case TIMEUUID:
-                    types.add(DataType.timeuuid());
+                    targetType = DataType.timeuuid();
                     break;
                 case TINYINT:
-                    types.add(DataType.tinyint());
+                    targetType = DataType.tinyint();
                     break;
                 case TUPLE:
-                     TupleType tupleType = targetCluster.getMetadata().newTupleType( ((TupleType)ct).getComponentTypes());
-                    types.add(tupleType);
+                    List<DataType> tupleComps = getTragetTypes(((TupleType)sourceType).getComponentTypes());
+                     TupleType tupleType = targetCluster.getMetadata().newTupleType(tupleComps);
+                    targetType = tupleType;
                     break;
                 case UDT:
-                    String typeName = ((UserType)ct).getTypeName();
+                    String typeName = ((UserType)sourceType).getTypeName();
                     UserType userType = targetCluster.getMetadata().getKeyspace(target).getUserType(typeName);
-                    types.add(userType);
+                    targetType = userType;
                     break;
                 case UUID:
-                    types.add(DataType.uuid());
+                    targetType = DataType.uuid();
                     break;
                 case VARCHAR:
-                    types.add(DataType.varchar());
+                    targetType = DataType.varchar();
                     break;
                 case VARINT:
-                    types.add(DataType.varint());
+                    targetType = DataType.varint();
                     break;
                 default:
-                    break; 
+                    throw new IllegalArgumentException("Can't find the passed in type");
             }
-        }
-        return targetCluster.getMetadata().newTupleType(types).newValue();
+        return targetType;
     }
 }
