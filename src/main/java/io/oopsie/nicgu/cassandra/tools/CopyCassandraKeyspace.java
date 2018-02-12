@@ -2,8 +2,13 @@ package io.oopsie.nicgu.cassandra.tools;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.CodecRegistry;
+import com.datastax.driver.core.ColumnMetadata;
+import com.datastax.driver.core.ConsistencyLevel;
 import com.datastax.driver.core.DataType;
+import com.datastax.driver.core.ParseUtils;
+import com.datastax.driver.core.PoolingOptions;
 import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.QueryOptions;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
@@ -43,7 +48,7 @@ public class CopyCassandraKeyspace {
     
         Set<String> argSet = new HashSet(Arrays.asList(args));
         
-        String sourceHostArg = argSet.stream().filter(arg -> arg.startsWith("sourceHost=")).findAny().orElse("localhost");
+        String sourceHostArg = argSet.stream().filter(arg -> arg.startsWith("sourceHost=")).findAny().orElse("35.190.140.33");
         sourceHostArg = sourceHostArg.replace("sourceHost=", "");
         String[] sourceHostParts = sourceHostArg.split(":");
         String sourceHost = sourceHostParts[0];
@@ -308,49 +313,93 @@ public class CopyCassandraKeyspace {
      */
     private void copyTableData(String table) {
         
-        String colCql = "SELECT * FROM system_schema.columns WHERE keyspace_name='" + source + "' AND table_name='" + table + "'";
-        ResultSet colRs = sourceSession.execute(colCql);
+        List<String> setColParams = new ArrayList();
+        List<ColumnMetadata> setCols = new ArrayList();
+        List<String> whereColParams = new ArrayList();
+        List<ColumnMetadata> whereCols = sourceCluster.getMetadata().getKeyspace(source)
+                .getTable(table) .getPrimaryKey();
+        List<ColumnMetadata> cols = sourceCluster.getMetadata().getKeyspace(source)
+                .getTable(table).getColumns();
 
-        Map<String, String> columns = Maps.newLinkedHashMap();
-        colRs.all().forEach(row -> {
-            columns.put(row.getString("column_name"), row.getString("type"));
+        whereCols.forEach(cmd -> {
+            whereColParams.add(ParseUtils.doubleQuote(cmd.getName()) + "=?");
         });
-        String insertColNames = String.join("", columns.keySet().stream().map(c -> c + ",").collect(Collectors.toList()));
-        insertColNames = insertColNames.substring(0, insertColNames.lastIndexOf(","));
 
-        List<String> insertPlaceholderList = columns.keySet().stream().map(c -> "?,").collect(Collectors.toList());
-        String insertPlaceholders = String.join("", insertPlaceholderList);
-        insertPlaceholders = insertPlaceholders.substring(0, insertPlaceholders.lastIndexOf(","));
+        cols.forEach(cmd -> {
+            if(!whereCols.contains(cmd)) {
+                if(cmd.getType().getName().equals(DataType.Name.COUNTER)) {
+                    setColParams.add(ParseUtils.doubleQuote(cmd.getName()) + "=" + ParseUtils.doubleQuote(cmd.getName()) + "+?");
+                } else {
+                    setColParams.add(ParseUtils.doubleQuote(cmd.getName()) + "=?");
+                }
+                setCols.add(cmd);
+            }
+        });
 
         String fromCql = String.join("", "SELECT * FROM ", source, ".", table);
         ResultSet fromRs = sourceSession.execute(fromCql);
+        String cql;
+        List<ColumnMetadata> execCols = new ArrayList();
+        if(setCols.isEmpty()) {
 
-        String toCql = String.join("",
-                "INSERT INTO ",
-                target,
-                ".",
-                table, " (",
-                insertColNames,
-                ") VALUES (",
-                insertPlaceholders,
-                 ")");
-        PreparedStatement pStmnt = copyPreps.get(toCql);
-        if(pStmnt == null) {
-            pStmnt = targetSession.prepare(toCql);
-            copyPreps.put(toCql, pStmnt);
+
+            String insertColNames = String.join("", cols.stream().map(c -> ParseUtils.doubleQuote(c.getName()) + ",").collect(Collectors.toList()));
+            insertColNames = insertColNames.substring(0, insertColNames.lastIndexOf(","));
+
+            List<String> insertPlaceholderList = cols.stream().map(c -> "?,").collect(Collectors.toList());
+            String insertPlaceholders = String.join("", insertPlaceholderList);
+            insertPlaceholders = insertPlaceholders.substring(0, insertPlaceholders.lastIndexOf(","));
+
+            String insertCql = String.join("",
+                    "INSERT INTO ",
+                    target,
+                    ".",
+                    table, " (",
+                    insertColNames,
+                    ") VALUES (",
+                    insertPlaceholders,
+                     ")");
+            cql = insertCql;
+            execCols.addAll(cols);
+        } else {
+
+            String setParams = String.join("", setColParams.stream().map(c -> c + ",").collect(Collectors.toList()));
+            setParams = setParams.substring(0, setParams.lastIndexOf(","));
+
+            String whereParams = String.join("", whereColParams.stream().map(c -> c + " AND ").collect(Collectors.toList()));
+            whereParams = whereParams.substring(0, whereParams.lastIndexOf(" AND "));
+            String updateCql = String.join("",
+                    "UPDATE ",
+                    target,
+                    ".",
+                    table,
+                    " SET ",
+                    setParams,
+                    " WHERE ",
+                    whereParams);
+            cql= updateCql;
+            execCols.addAll(setCols);
+            execCols.addAll(whereCols);
         }
+
+        PreparedStatement pStmnt = copyPreps.get(cql);
+        if(pStmnt == null) {
+            pStmnt = targetSession.prepare(cql);
+            copyPreps.put(cql, pStmnt);
+        }
+
         for (Row row : fromRs.all()) {
             AtomicInteger counter = new AtomicInteger();
-            Object[] values = new Object[columns.size()];
-            for (String col : columns.keySet()) {
-                String udt = columns.get(col);
-                values[counter.getAndIncrement()] = convertUDTValueIfNecessary(row.getObject(col));
+            Object[] values = new Object[setColParams.size() + whereColParams.size()];
+            for (ColumnMetadata execCol : execCols) {
+                values[counter.getAndIncrement()] = convertUDTValueIfNecessary(row.getObject(execCol.getName()));
             }
             targetSession.executeAsync(pStmnt.bind(values));
 
             // Give the cassandra driver some room to work asynchronous ..
+            // .. otherwise we eventually might get a NoHostAvailableException ....
             try {
-                Thread.sleep(5);
+                Thread.sleep(1);
             } catch(Exception e) {
                 throw new RuntimeException(e);
             }
