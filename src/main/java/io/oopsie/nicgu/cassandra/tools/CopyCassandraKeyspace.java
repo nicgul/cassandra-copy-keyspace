@@ -3,12 +3,9 @@ package io.oopsie.nicgu.cassandra.tools;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.CodecRegistry;
 import com.datastax.driver.core.ColumnMetadata;
-import com.datastax.driver.core.ConsistencyLevel;
 import com.datastax.driver.core.DataType;
 import com.datastax.driver.core.ParseUtils;
-import com.datastax.driver.core.PoolingOptions;
 import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.QueryOptions;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
@@ -48,7 +45,7 @@ public class CopyCassandraKeyspace {
     
         Set<String> argSet = new HashSet(Arrays.asList(args));
         
-        String sourceHostArg = argSet.stream().filter(arg -> arg.startsWith("sourceHost=")).findAny().orElse("35.190.140.33");
+        String sourceHostArg = argSet.stream().filter(arg -> arg.startsWith("sourceHost=")).findAny().orElse("localhost");
         sourceHostArg = sourceHostArg.replace("sourceHost=", "");
         String[] sourceHostParts = sourceHostArg.split(":");
         String sourceHost = sourceHostParts[0];
