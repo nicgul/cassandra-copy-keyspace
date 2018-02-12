@@ -1,5 +1,5 @@
 # cassandra-copy-keyspace
-Copies a Cassandra keyspace to a new named keyspace. Simple tool to clone or create a backup of an existing keyspace;
+Copies a Cassandra keyspace to a new named keyspace. Simple tool to clone or create a backup of an existing keyspace.
 
 Improvements and bug reporting are more than welcome!
 
