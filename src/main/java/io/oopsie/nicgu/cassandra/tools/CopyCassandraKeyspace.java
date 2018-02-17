@@ -123,13 +123,13 @@ public class CopyCassandraKeyspace {
         }
     }
     
-    private final String sourceHost;
+    private final String[] sourceHosts;
     private final int sourcePort;
     private final String source;
     private final String sourceUser;
     private final String sourcePass;
     
-    private final String targetHost;
+    private final String[] targetHosts;
     private final int targetPort;
     private final String target;
     private final String targetUser;
@@ -168,13 +168,51 @@ public class CopyCassandraKeyspace {
         }
         this.target = target;
         
-        this.sourceHost = sourceHost == null || sourceHost.trim().isEmpty() ? "localhost" : sourceHost.trim();
+        this.sourceHosts = sourceHost == null || sourceHost.trim().isEmpty() ? new String[] {"localhost"} : new String[] {sourceHost.trim()};
         this.sourcePort = sourcePort == null || sourcePort.trim().isEmpty() ? 9042 : Integer.valueOf(sourcePort.trim());
         this.sourceUser = sourceUser == null || sourceUser.trim().isEmpty() ? null : sourceUser.trim();
         this.sourcePass = sourcePass == null || sourcePass.trim().isEmpty() ? null : sourcePass.trim();
         
-        this.targetHost = targetHost == null || targetHost.trim().isEmpty() ? "localhost" : targetHost.trim();
+        this.targetHosts = targetHost == null || targetHost.trim().isEmpty() ? new String[] {"localhost"} :  new String[] {targetHost.trim()};
         this.targetPort = targetPort == null || targetPort.trim().isEmpty() ? 9042 : Integer.valueOf(targetPort.trim());
+        this.targetUser = targetUser == null || targetUser.trim().isEmpty() ? null : targetUser.trim();
+        this.targetPass = targetPass == null || targetPass.trim().isEmpty() ? null : targetPass.trim();
+        
+    }
+    
+    /**
+     * Create a new CopyCassandraKeyspace instance capable of copying data from source to target.
+     * 
+     * @param sourceHosts the hosts where the source keyspace resides
+     * @param sourcePort the port of the host where the source keyspace resides
+     * @param source the name of the source keyspace
+     * @param sourceUser the username of the source keyspace cluster
+     * @param sourcePass the password of the source keyspace cluster
+     * @param targetHosts the hosts where the target keyspace resides
+     * @param targetPort the port of the host where the target keyspace resides
+     * @param target the name of the target keyspace
+     * @param targetUser the username of the target keyspace cluster
+     * @param targetPass the password of the target keyspace cluster
+     */
+    public CopyCassandraKeyspace(String[] sourceHosts, int sourcePort, String source, String sourceUser, String sourcePass,
+            String[] targetHosts, int targetPort, String target, String targetUser, String targetPass) {
+        
+        if(source == null || source.trim().isEmpty()) {
+            throw new IllegalArgumentException("The 'source' argument can't be empty.");
+        }
+        this.source = source;
+        if(target == null || target .trim().isEmpty()) {
+            throw new IllegalArgumentException("The 'target' argument can't be empty.");
+        }
+        this.target = target;
+        
+        this.sourceHosts = sourceHosts == null || sourceHosts.length < 1 ? new String[] {"localhost"} : sourceHosts;
+        this.sourcePort = sourcePort < 1 || sourcePort > 65535 ? 9042 : sourcePort;
+        this.sourceUser = sourceUser == null || sourceUser.trim().isEmpty() ? null : sourceUser.trim();
+        this.sourcePass = sourcePass == null || sourcePass.trim().isEmpty() ? null : sourcePass.trim();
+        
+        this.targetHosts = targetHosts == null || targetHosts.length < 1 ? new String[] {"localhost"} :  targetHosts;
+        this.targetPort = targetPort < 1 || sourcePort > 65535 ? 9042 : targetPort;
         this.targetUser = targetUser == null || targetUser.trim().isEmpty() ? null : targetUser.trim();
         this.targetPass = targetPass == null || targetPass.trim().isEmpty() ? null : targetPass.trim();
         
@@ -197,22 +235,20 @@ public class CopyCassandraKeyspace {
     private void connectSource() {
         
         sourceCluster = Cluster.builder()
-                .addContactPoint(sourceHost).withPort(sourcePort)
+                .addContactPoints(sourceHosts).withPort(sourcePort)
                 .withCredentials(sourceUser, sourcePass)
                 .build();
         sourceSession = sourceCluster.connect(source);
-        System.out.println("Connected to source cluster: '" + sourceHost + "'");
     }
     
     /**
      * Connects the target cluster and session objects.
      */
     private void connectTarget() {
-        targetCluster = Cluster.builder().addContactPoint(targetHost).withPort(targetPort)
+        targetCluster = Cluster.builder().addContactPoints(targetHosts).withPort(targetPort)
                 .withCredentials(targetUser, targetPass)
                 .build();
         targetSession = targetCluster.connect();
-        System.out.println("Connected to target cluster: '" + targetHost + "'");
     }
     
     /**
@@ -233,7 +269,6 @@ public class CopyCassandraKeyspace {
         
         if(sourceCluster != null) {
             sourceCluster.close();
-            System.out.println("Closed connection to source cluster: '" + sourceHost + "'");
         }
     }
     
@@ -247,7 +282,6 @@ public class CopyCassandraKeyspace {
         
         if(targetCluster != null) {
             targetCluster.close();
-            System.out.println("Closed connection to target cluster: '" + targetHost + "'");
         }
     }
     
@@ -284,7 +318,6 @@ public class CopyCassandraKeyspace {
         cqls.forEach(cql -> { 
             targetSession.execute(cql);
         });
-        System.out.println("Target keyspace created: '" + target + "'");
         copyTables();
     }
     
@@ -401,7 +434,6 @@ public class CopyCassandraKeyspace {
                 throw new RuntimeException(e);
             }
         }
-        System.out.println("Copied data from table: '" + table + "'");
     }
     
     /**
